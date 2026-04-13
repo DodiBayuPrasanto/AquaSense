@@ -1,0 +1,47 @@
+{
+  "model_version": "AquaSense",
+  "tflite_note": "Requires SELECT_TF_OPS for LSTM support",
+  "feature_cols": [
+    "tempAir",
+    "DO",
+    "turbidity",
+    "pH"
+  ],
+  "window_size": 20,
+  "threshold": 0.33026906536800693,
+  "threshold_method": "Youden's J (J=0.5678)",
+  "clip_sigma": 5.0,
+  "scaler": {
+    "tempAir": {
+      "mean": 29.96063518696069,
+      "std": 0.879393751005986
+    },
+    "DO": {
+      "mean": 7.618262224352828,
+      "std": 0.10942399211101082
+    },
+    "turbidity": {
+      "mean": 7.926687440076702,
+      "std": 11.274648081537501
+    },
+    "pH": {
+      "mean": 6.805644774688398,
+      "std": 0.2154132495050882
+    }
+  },
+  "metrics": {
+    "recall": 0.6057102406795658,
+    "precision": 0.9420183486238533,
+    "f1": 0.7373258652879505,
+    "specificity": 0.9621284755512943,
+    "accuracy": 0.7825208085612366,
+    "pr_auc": 0.8842489610323875,
+    "youden_j": 0.56783871623086
+  },
+  "sensor_thresholds": {
+    "tempAir": 0.25504903288093783,
+    "DO": 0.48418690371063633,
+    "turbidity": 0.39149010983459687,
+    "pH": 0.5411318880653444
+  }
+}
