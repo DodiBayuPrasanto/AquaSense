@@ -1,3 +1,4 @@
+import 'package:aquasense/widgets/bottom_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'login.dart';
@@ -49,8 +50,6 @@ class MulaiSekarang extends StatelessWidget {
               ),
 
               const SizedBox(height: 12),
-
-              // Sub Judul / Deskripsi
               Text(
                 "Dengan AquaSense monitoring kolam lele jadi mudah!",
                 textAlign: TextAlign.center,
@@ -63,29 +62,13 @@ class MulaiSekarang extends StatelessWidget {
 
               const SizedBox(height: 45),
 
-              // Tombol Masuk
               SizedBox(
                 width: double.infinity,
                 height: 48,
                 child: ElevatedButton(
                   onPressed: () {
-                    Navigator.of(context).push(
-                      PageRouteBuilder(
-                        transitionDuration: const Duration(milliseconds: 300),
-                        pageBuilder: (context, animation, secondaryAnimation) =>
-                            const LoginPage(),
-                        transitionsBuilder:
-                            (context, animation, secondaryAnimation, child) {
-                              final curved = CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeIn,
-                              );
-                              return FadeTransition(
-                                opacity: curved,
-                                child: child,
-                              );
-                            },
-                      ),
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(builder: (_) => const BottomNavBar()),
                     );
                   },
                   style: ElevatedButton.styleFrom(
@@ -107,50 +90,6 @@ class MulaiSekarang extends StatelessWidget {
 
               const SizedBox(height: 16),
 
-              // Tombol Daftar Sekarang (Outline)
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: OutlinedButton(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      PageRouteBuilder(
-                        transitionDuration: const Duration(milliseconds: 300),
-                        pageBuilder: (context, animation, secondaryAnimation) =>
-                            const Register(),
-                        transitionsBuilder:
-                            (context, animation, secondaryAnimation, child) {
-                              final curved = CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeIn,
-                              );
-                              return FadeTransition(
-                                opacity: curved,
-                                child: child,
-                              );
-                            },
-                      ),
-                    );
-                  },
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(
-                      color: Color(0xFF24479C),
-                      width: 1.5,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(50),
-                    ),
-                  ),
-                  child: Text(
-                    "Daftar Sekarang",
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 20,
-                      color: const Color(0xFF1A53D4),
-                    ),
-                  ),
-                ),
-              ),
             ],
           ),
         ),

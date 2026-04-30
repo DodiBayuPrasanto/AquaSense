@@ -1,8 +1,48 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart' as fl_chart;
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:math';
 import 'notif.dart';
 
+// --- MODEL DATA ---
+class SensorData {
+  final double dissolvedOxygen;
+  final double phAir;
+  final double suhuAir;
+  final double suhuLingkungan;
+  final double tds;
+  final double turbidity;
+  final DateTime updatedAt;
+
+  SensorData({
+    required this.dissolvedOxygen,
+    required this.phAir,
+    required this.suhuAir,
+    required this.suhuLingkungan,
+    required this.tds,
+    required this.turbidity,
+    required this.updatedAt,
+  });
+
+  factory SensorData.fromFirestore(Map<String, dynamic> json) {
+    return SensorData(
+      dissolvedOxygen: (json['dissolved_oxygen'] ?? 0).toDouble(),
+      phAir: (json['pH_air'] ?? 0).toDouble(),
+      suhuAir: (json['suhu_air'] ?? 0).toDouble(),
+      suhuLingkungan: (json['suhu_lingkungan'] ?? 0).toDouble(),
+      tds: (json['tds'] ?? 0).toDouble(),
+      turbidity: (json['turbidity'] ?? 0).toDouble(),
+      updatedAt: (json['updatedAt'] as Timestamp).toDate(),
+    );
+  }
+}
+
+// =====================================================================
+// STATISTIK PAGE
+// =====================================================================
 class StatistikPage extends StatelessWidget {
   const StatistikPage({super.key});
 
@@ -11,103 +51,135 @@ class StatistikPage extends StatelessWidget {
     final mediaQuery = MediaQuery.of(context);
     final isTablet = mediaQuery.size.shortestSide >= 600;
     final horizontalPadding = isTablet ? 48.0 : 16.0;
-    bool hasNotif = true;
+
+    final Stream<QuerySnapshot> sensorStream =
+        FirebaseFirestore.instanceFor(
+              app: Firebase.app(),
+              databaseId: 'aquasense',
+            )
+            .collection('sensor_data')
+            .orderBy('updatedAt', descending: true)
+            .limit(365)
+            .snapshots();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F7),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(
-            horizontal: horizontalPadding,
-            vertical: 16,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 20),
+        child: StreamBuilder<QuerySnapshot>(
+          stream: sensorStream,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(child: Text("Error: ${snapshot.error}"));
+            }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-              /// ================= HEADER =================
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            final List<SensorData> historyData = snapshot.data!.docs
+                .map(
+                  (doc) => SensorData.fromFirestore(
+                    doc.data() as Map<String, dynamic>,
+                  ),
+                )
+                .toList()
+                .reversed
+                .toList();
+
+            return SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: horizontalPadding,
+                vertical: 16,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 20),
+
+                  // ================= HEADER =================
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        "Hello, Dodi Bayu Prasanto",
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF1D2625),
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "",
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF1D2625),
+                            ),
+                          ),
+                          Text(
+                            "",
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: const Color(0xFF97A09F),
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        "09 September 2025",
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: const Color(0xFF97A09F),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const NotifPage(),
+                            ),
+                          );
+                        },
+                        child: Image.asset(
+                          "assets/icons/Notif_On.png",
+                          width: 24,
+                          height: 28,
                         ),
                       ),
                     ],
                   ),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const NotifPage()),
-                      );
-                    },
-                    child: Image.asset(
-                      hasNotif
-                          ? "assets/icons/Notif_On.png"
-                          : "assets/icons/Notif_Off.png",
-                      width: 24,
-                      height: 28,
+
+                  const SizedBox(height: 30),
+
+                  // ================= CARD CHART =================
+                  _ChartCard(historyData: historyData),
+
+                  const SizedBox(height: 12),
+
+                  // ================= TEMPAT PAKAN =================
+                  Text(
+                    "Kontrol Pemberian Pakan",
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
+
+                  const SizedBox(height: 12),
+
+                  const TempatPakanControl(),
                 ],
               ),
-
-              const SizedBox(height: 30),
-
-              /// ================= CARD CHART =================
-              const _ChartCard(),
-
-              const SizedBox(height: 12),
-
-              /// ================= TEMPAT PAKAN =================
-              Text(
-                "Kontrol Pemberian Pakan",
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Interactive control: toggles open/close and on/off icons
-              const TempatPakanControl(),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
   }
 }
 
+// =====================================================================
+// CHART CARD
+// =====================================================================
 class _ChartCard extends StatefulWidget {
-  const _ChartCard({super.key});
+  final List<SensorData> historyData;
+  const _ChartCard({required this.historyData});
 
   @override
   State<_ChartCard> createState() => _ChartCardState();
 }
 
 class _ChartCardState extends State<_ChartCard> {
-  bool isPressed = false;
   String selectedDay = "7 Hari";
   String selectedSensor = "Suhu Air";
 
-  // Mapping satuan untuk setiap sensor
   final Map<String, String> sensorUnits = {
     "Suhu Air": "°C",
     "Suhu Lingkungan": "°C",
@@ -117,508 +189,277 @@ class _ChartCardState extends State<_ChartCard> {
     "Dissolved Oxygen": "mg/L",
   };
 
-  // Mapping range maksimal untuk setiap sensor
-  final Map<String, double> sensorMaxValues = {
-    "Suhu Air": 100,
-    "Suhu Lingkungan": 50,
-    "TDS": 200,
-    "pH Air": 10, // Diperbaiki: range pH 4–10
-    "Turbidity": 10,
-    "Dissolved Oxygen": 15,
-  };
+  List<fl_chart.FlSpot> _getSpots() {
+    if (widget.historyData.isEmpty) return [const fl_chart.FlSpot(0, 0)];
 
-  // Mapping range minimal untuk setiap sensor
-  final Map<String, double> sensorMinValues = {
-    "Suhu Air": 0,
-    "Suhu Lingkungan": 0,
-    "TDS": 0,
-    "pH Air": 4, // Diperbaiki: pH dimulai dari 4 agar grafik tidak gepeng
-    "Turbidity": 0,
-    "Dissolved Oxygen": 0,
-  };
-
-  // Mapping interval Y-axis per sensor agar label rapi
-  final Map<String, double> sensorIntervals = {
-    "Suhu Air": 20,
-    "Suhu Lingkungan": 10,
-    "TDS": 40,
-    "pH Air": 1, // Diperbaiki: interval 1 unit pH
-    "Turbidity": 2,
-    "Dissolved Oxygen": 3,
-  };
-
-  // Fungsi untuk generate data lengkap dari pola dasar
-  // Menerima parameter variation dan clamp agar data pH tidak rusak
-  static List<fl_chart.FlSpot> _generateFullData(
-    List<fl_chart.FlSpot> basePattern,
-    int totalDays, {
-    double variation = 2.0,
-    double minClamp = 0,
-    double maxClamp = double.infinity,
-  }) {
-    List<fl_chart.FlSpot> fullData = [];
-    int patternLength = basePattern.length;
-    for (int i = 0; i < totalDays; i++) {
-      int patternIndex = i % patternLength;
-      double value = basePattern[patternIndex].y;
-      // Variasi proporsional: variation/2 ke atas/bawah
-      value += (i % 5 - 2) * (variation / 2);
-      value = value.clamp(minClamp, maxClamp);
-      fullData.add(fl_chart.FlSpot(i.toDouble(), value));
+    int limit;
+    switch (selectedDay) {
+      case "1 Bulan":
+        limit = 28;
+        break;
+      case "3 Bulan":
+        limit = 91;
+        break;
+      case "6 Bulan":
+        limit = 182;
+        break;
+      case "1 Tahun":
+        limit = 365;
+        break;
+      default:
+        limit = 7;
     }
-    return fullData;
-  }
 
-  // Data dummy suhu air - °C
-  static final List<fl_chart.FlSpot> suhuAirBase = [
-    fl_chart.FlSpot(0, 72),
-    fl_chart.FlSpot(1, 75),
-    fl_chart.FlSpot(2, 65),
-    fl_chart.FlSpot(3, 68),
-    fl_chart.FlSpot(4, 60),
-    fl_chart.FlSpot(5, 75),
-    fl_chart.FlSpot(6, 50),
-    fl_chart.FlSpot(7, 70),
-    fl_chart.FlSpot(8, 68),
-    fl_chart.FlSpot(9, 72),
-    fl_chart.FlSpot(10, 65),
-    fl_chart.FlSpot(11, 80),
-    fl_chart.FlSpot(12, 75),
-    fl_chart.FlSpot(13, 78),
-    fl_chart.FlSpot(14, 70),
-    fl_chart.FlSpot(15, 73),
-    fl_chart.FlSpot(16, 76),
-    fl_chart.FlSpot(17, 72),
-    fl_chart.FlSpot(18, 74),
-    fl_chart.FlSpot(19, 69),
-    fl_chart.FlSpot(20, 71),
-    fl_chart.FlSpot(21, 68),
-    fl_chart.FlSpot(22, 77),
-    fl_chart.FlSpot(23, 75),
-    fl_chart.FlSpot(24, 73),
-    fl_chart.FlSpot(25, 79),
-    fl_chart.FlSpot(26, 72),
-    fl_chart.FlSpot(27, 74),
-  ];
+    final dataSlice = widget.historyData.take(limit).toList();
 
-  static final List<fl_chart.FlSpot> suhuAirData = _generateFullData(
-    suhuAirBase,
-    364,
-    variation: 4.0,
-    minClamp: 0,
-    maxClamp: 100,
-  );
-
-  // Data dummy suhu lingkungan - °C
-  static final List<fl_chart.FlSpot> suhuLingkunganBase = [
-    fl_chart.FlSpot(0, 25),
-    fl_chart.FlSpot(1, 26),
-    fl_chart.FlSpot(2, 24),
-    fl_chart.FlSpot(3, 27),
-    fl_chart.FlSpot(4, 23),
-    fl_chart.FlSpot(5, 28),
-    fl_chart.FlSpot(6, 22),
-    fl_chart.FlSpot(7, 26),
-    fl_chart.FlSpot(8, 25),
-    fl_chart.FlSpot(9, 27),
-    fl_chart.FlSpot(10, 24),
-    fl_chart.FlSpot(11, 29),
-    fl_chart.FlSpot(12, 26),
-    fl_chart.FlSpot(13, 28),
-    fl_chart.FlSpot(14, 25),
-    fl_chart.FlSpot(15, 27),
-    fl_chart.FlSpot(16, 26),
-    fl_chart.FlSpot(17, 24),
-    fl_chart.FlSpot(18, 28),
-    fl_chart.FlSpot(19, 23),
-    fl_chart.FlSpot(20, 27),
-    fl_chart.FlSpot(21, 25),
-    fl_chart.FlSpot(22, 29),
-    fl_chart.FlSpot(23, 26),
-    fl_chart.FlSpot(24, 24),
-    fl_chart.FlSpot(25, 30),
-    fl_chart.FlSpot(26, 25),
-    fl_chart.FlSpot(27, 27),
-  ];
-
-  static final List<fl_chart.FlSpot> suhuLingkunganData = _generateFullData(
-    suhuLingkunganBase,
-    364,
-    variation: 4.0,
-    minClamp: 0,
-    maxClamp: 50,
-  );
-
-  // Data dummy TDS - ppm
-  static final List<fl_chart.FlSpot> tdsBase = [
-    fl_chart.FlSpot(0, 150),
-    fl_chart.FlSpot(1, 160),
-    fl_chart.FlSpot(2, 140),
-    fl_chart.FlSpot(3, 170),
-    fl_chart.FlSpot(4, 130),
-    fl_chart.FlSpot(5, 180),
-    fl_chart.FlSpot(6, 120),
-    fl_chart.FlSpot(7, 155),
-    fl_chart.FlSpot(8, 165),
-    fl_chart.FlSpot(9, 145),
-    fl_chart.FlSpot(10, 175),
-    fl_chart.FlSpot(11, 135),
-    fl_chart.FlSpot(12, 185),
-    fl_chart.FlSpot(13, 125),
-    fl_chart.FlSpot(14, 158),
-    fl_chart.FlSpot(15, 168),
-    fl_chart.FlSpot(16, 148),
-    fl_chart.FlSpot(17, 178),
-    fl_chart.FlSpot(18, 138),
-    fl_chart.FlSpot(19, 188),
-    fl_chart.FlSpot(20, 128),
-    fl_chart.FlSpot(21, 152),
-    fl_chart.FlSpot(22, 162),
-    fl_chart.FlSpot(23, 142),
-    fl_chart.FlSpot(24, 172),
-    fl_chart.FlSpot(25, 132),
-    fl_chart.FlSpot(26, 182),
-    fl_chart.FlSpot(27, 122),
-  ];
-
-  static final List<fl_chart.FlSpot> tdsData = _generateFullData(
-    tdsBase,
-    364,
-    variation: 4.0,
-    minClamp: 0,
-    maxClamp: 200,
-  );
-
-  // Data dummy pH - range 4–10 (fokus area 6.5–8.0)
-  static final List<fl_chart.FlSpot> phBase = [
-    fl_chart.FlSpot(0, 7.2),
-    fl_chart.FlSpot(1, 7.5),
-    fl_chart.FlSpot(2, 6.8),
-    fl_chart.FlSpot(3, 7.1),
-    fl_chart.FlSpot(4, 6.9),
-    fl_chart.FlSpot(5, 7.4),
-    fl_chart.FlSpot(6, 6.7),
-    fl_chart.FlSpot(7, 7.3),
-    fl_chart.FlSpot(8, 7.0),
-    fl_chart.FlSpot(9, 7.6),
-    fl_chart.FlSpot(10, 6.8),
-    fl_chart.FlSpot(11, 7.2),
-    fl_chart.FlSpot(12, 7.1),
-    fl_chart.FlSpot(13, 7.5),
-    fl_chart.FlSpot(14, 6.9),
-    fl_chart.FlSpot(15, 7.4),
-    fl_chart.FlSpot(16, 7.0),
-    fl_chart.FlSpot(17, 7.3),
-    fl_chart.FlSpot(18, 6.8),
-    fl_chart.FlSpot(19, 7.6),
-    fl_chart.FlSpot(20, 7.1),
-    fl_chart.FlSpot(21, 7.2),
-    fl_chart.FlSpot(22, 7.5),
-    fl_chart.FlSpot(23, 6.9),
-    fl_chart.FlSpot(24, 7.4),
-    fl_chart.FlSpot(25, 7.0),
-    fl_chart.FlSpot(26, 7.3),
-    fl_chart.FlSpot(27, 6.8),
-  ];
-
-  // Diperbaiki: variasi kecil (0.4) dan clamp 4–10 agar data pH akurat
-  static final List<fl_chart.FlSpot> phData = _generateFullData(
-    phBase,
-    364,
-    variation: 0.4,
-    minClamp: 4,
-    maxClamp: 10,
-  );
-
-  // Data dummy Turbidity - NTU
-  static final List<fl_chart.FlSpot> turbidityBase = [
-    fl_chart.FlSpot(0, 5.2),
-    fl_chart.FlSpot(1, 4.8),
-    fl_chart.FlSpot(2, 6.1),
-    fl_chart.FlSpot(3, 5.5),
-    fl_chart.FlSpot(4, 4.9),
-    fl_chart.FlSpot(5, 6.3),
-    fl_chart.FlSpot(6, 5.0),
-    fl_chart.FlSpot(7, 5.7),
-    fl_chart.FlSpot(8, 4.6),
-    fl_chart.FlSpot(9, 6.0),
-    fl_chart.FlSpot(10, 5.3),
-    fl_chart.FlSpot(11, 5.8),
-    fl_chart.FlSpot(12, 4.7),
-    fl_chart.FlSpot(13, 6.2),
-    fl_chart.FlSpot(14, 5.1),
-    fl_chart.FlSpot(15, 5.9),
-    fl_chart.FlSpot(16, 4.8),
-    fl_chart.FlSpot(17, 6.1),
-    fl_chart.FlSpot(18, 5.4),
-    fl_chart.FlSpot(19, 5.6),
-    fl_chart.FlSpot(20, 4.9),
-    fl_chart.FlSpot(21, 6.0),
-    fl_chart.FlSpot(22, 5.2),
-    fl_chart.FlSpot(23, 5.7),
-    fl_chart.FlSpot(24, 4.6),
-    fl_chart.FlSpot(25, 6.3),
-    fl_chart.FlSpot(26, 5.0),
-    fl_chart.FlSpot(27, 5.8),
-  ];
-
-  static final List<fl_chart.FlSpot> turbidityData = _generateFullData(
-    turbidityBase,
-    364,
-    variation: 2.0,
-    minClamp: 0,
-    maxClamp: 10,
-  );
-
-  // Data dummy Dissolved Oxygen - mg/L
-  static final List<fl_chart.FlSpot> doBase = [
-    fl_chart.FlSpot(0, 8.5),
-    fl_chart.FlSpot(1, 8.2),
-    fl_chart.FlSpot(2, 9.1),
-    fl_chart.FlSpot(3, 8.8),
-    fl_chart.FlSpot(4, 8.0),
-    fl_chart.FlSpot(5, 9.3),
-    fl_chart.FlSpot(6, 7.9),
-    fl_chart.FlSpot(7, 8.7),
-    fl_chart.FlSpot(8, 8.4),
-    fl_chart.FlSpot(9, 9.0),
-    fl_chart.FlSpot(10, 8.1),
-    fl_chart.FlSpot(11, 8.9),
-    fl_chart.FlSpot(12, 8.3),
-    fl_chart.FlSpot(13, 9.2),
-    fl_chart.FlSpot(14, 8.0),
-    fl_chart.FlSpot(15, 8.6),
-    fl_chart.FlSpot(16, 8.5),
-    fl_chart.FlSpot(17, 9.1),
-    fl_chart.FlSpot(18, 8.2),
-    fl_chart.FlSpot(19, 8.8),
-    fl_chart.FlSpot(20, 8.4),
-    fl_chart.FlSpot(21, 9.0),
-    fl_chart.FlSpot(22, 8.1),
-    fl_chart.FlSpot(23, 8.7),
-    fl_chart.FlSpot(24, 8.3),
-    fl_chart.FlSpot(25, 9.2),
-    fl_chart.FlSpot(26, 8.0),
-    fl_chart.FlSpot(27, 8.6),
-  ];
-
-  static final List<fl_chart.FlSpot> doData = _generateFullData(
-    doBase,
-    364,
-    variation: 2.0,
-    minClamp: 0,
-    maxClamp: 15,
-  );
-
-  // Map data sensor
-  late final Map<String, List<fl_chart.FlSpot>> sensorDataMap = {
-    "Suhu Air": suhuAirData,
-    "Suhu Lingkungan": suhuLingkunganData,
-    "TDS": tdsData,
-    "pH Air": phData,
-    "Turbidity": turbidityData,
-    "Dissolved Oxygen": doData,
-  };
-
-  // Chart data menggunakan slice dari data sensor yang dipilih
-  Map<String, List<fl_chart.FlSpot>> get chartDataMap {
-    final selectedSensorData = sensorDataMap[selectedSensor] ?? suhuAirData;
-    return {
-      "7 Hari": selectedSensorData.sublist(0, 7),
-      "1 Bulan": selectedSensorData.sublist(0, 28),
-      "3 Bulan": selectedSensorData.sublist(0, 91),
-      "6 Bulan": selectedSensorData.sublist(0, 182),
-      "1 Tahun": selectedSensorData,
-    };
-  }
-
-  List<fl_chart.FlSpot> getChartData() {
-    return chartDataMap[selectedDay] ?? chartDataMap["7 Hari"]!;
-  }
-
-  void selectDay(String day) {
-    setState(() {
-      selectedDay = day;
+    return List.generate(dataSlice.length, (index) {
+      final data = dataSlice[index];
+      double yValue;
+      switch (selectedSensor) {
+        case "Suhu Air":
+          yValue = data.suhuAir;
+          break;
+        case "Suhu Lingkungan":
+          yValue = data.suhuLingkungan;
+          break;
+        case "TDS":
+          yValue = data.tds;
+          break;
+        case "pH Air":
+          yValue = data.phAir;
+          break;
+        case "Turbidity":
+          yValue = data.turbidity;
+          break;
+        case "Dissolved Oxygen":
+          yValue = data.dissolvedOxygen;
+          break;
+        default:
+          yValue = 0;
+      }
+      return fl_chart.FlSpot(index.toDouble(), yValue);
     });
   }
 
-  void selectSensor(String sensor) {
-    setState(() {
-      selectedSensor = sensor;
-    });
+  double _getMinY(List<fl_chart.FlSpot> spots) {
+    if (spots.isEmpty) return 0;
+    double min = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
+    double max = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    return (min - (max - min) * 0.15).clamp(0, double.infinity);
+  }
+
+  double _getMaxY(List<fl_chart.FlSpot> spots) {
+    if (spots.isEmpty) return 10;
+    double min = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
+    double max = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    return max + (max - min) * 0.15;
+  }
+
+  double _calculateOptimalInterval(double minY, double maxY) {
+    double range = maxY - minY;
+    if (range <= 0) return 1.0;
+    double rawInterval = range / 4.0;
+    double magnitude = pow(
+      10.0,
+      (log(rawInterval) / ln10).floorToDouble(),
+    ).toDouble();
+    double normalized = rawInterval / magnitude;
+    if (normalized <= 1.0) return magnitude;
+    if (normalized <= 2.0) return magnitude * 2;
+    if (normalized <= 2.5) return magnitude * 2.5;
+    if (normalized <= 5.0) return magnitude * 5;
+    return magnitude * 10;
   }
 
   @override
   Widget build(BuildContext context) {
-    final double minY = sensorMinValues[selectedSensor] ?? 0;
-    final double maxY = sensorMaxValues[selectedSensor] ?? 100;
-    final double interval =
-        sensorIntervals[selectedSensor] ?? ((maxY - minY) / 5);
+    final spots = _getSpots();
+    final rawMinY = _getMinY(spots);
+    final rawMaxY = _getMaxY(spots);
+    final interval = _calculateOptimalInterval(rawMinY, rawMaxY);
+    var minY = (rawMinY / interval).floorToDouble() * interval;
+    var maxY = minY + interval * 4;
+
+    final dataMax = spots.isEmpty
+        ? 0.0
+        : spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    if (dataMax > maxY) {
+      final stepsNeeded = ((dataMax - minY) / interval).ceilToDouble();
+      minY = minY + (stepsNeeded - 4) * interval;
+      maxY = minY + interval * 4;
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFE4E4E4),
-          width: 2,
-          strokeAlign: BorderSide.strokeAlignInside,
-        ),
+        border: Border.all(color: const Color(0xFFE4E4E4), width: 2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// ===== CHART =====
-          GestureDetector(
-            onTapDown: (_) => setState(() => isPressed = true),
-            onTapUp: (_) => setState(() => isPressed = false),
-            onTapCancel: () => setState(() => isPressed = false),
-            onPanStart: (_) => setState(() => isPressed = true),
-            onPanUpdate: (_) => setState(() => isPressed = true),
-            onPanEnd: (_) => setState(() => isPressed = false),
-            child: SizedBox(
-              height: 260,
-              child: fl_chart.LineChart(
-                fl_chart.LineChartData(
-                  minY: minY, // Diperbaiki: dinamis per sensor
-                  maxY: maxY, // Diperbaiki: dinamis per sensor
-                  gridData: const fl_chart.FlGridData(show: false),
-                  borderData: fl_chart.FlBorderData(show: false),
-                  titlesData: fl_chart.FlTitlesData(
-                    topTitles: const fl_chart.AxisTitles(
-                      sideTitles: fl_chart.SideTitles(showTitles: false),
-                    ),
-                    bottomTitles: const fl_chart.AxisTitles(
-                      sideTitles: fl_chart.SideTitles(showTitles: false),
-                    ),
-                    leftTitles: const fl_chart.AxisTitles(
-                      sideTitles: fl_chart.SideTitles(showTitles: false),
-                    ),
-                    rightTitles: fl_chart.AxisTitles(
-                      sideTitles: fl_chart.SideTitles(
-                        showTitles: true,
-                        interval: interval, // Diperbaiki: interval dinamis
-                        reservedSize: 54,
-                        getTitlesWidget: (value, meta) {
-                          final unit = sensorUnits[selectedSensor] ?? "";
-                          // pH ditampilkan 1 desimal, sensor lain integer
-                          final displayValue = selectedSensor == "pH Air"
-                              ? value.toStringAsFixed(1)
-                              : value.toInt().toString();
-                          return Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: Text(
-                              "$displayValue $unit",
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: const Color(0xFF6E6E6E),
-                              ),
+          SizedBox(
+            height: 260,
+            child: fl_chart.LineChart(
+              fl_chart.LineChartData(
+                minY: minY,
+                maxY: maxY,
+                gridData: const fl_chart.FlGridData(show: false),
+                borderData: fl_chart.FlBorderData(show: false),
+                titlesData: fl_chart.FlTitlesData(
+                  topTitles: const fl_chart.AxisTitles(
+                    sideTitles: fl_chart.SideTitles(showTitles: false),
+                  ),
+                  bottomTitles: const fl_chart.AxisTitles(
+                    sideTitles: fl_chart.SideTitles(showTitles: false),
+                  ),
+                  leftTitles: const fl_chart.AxisTitles(
+                    sideTitles: fl_chart.SideTitles(showTitles: false),
+                  ),
+                  rightTitles: fl_chart.AxisTitles(
+                    sideTitles: fl_chart.SideTitles(
+                      showTitles: true,
+                      interval: interval,
+                      reservedSize: 60,
+                      getTitlesWidget: (value, meta) {
+                        final unit = sensorUnits[selectedSensor] ?? "";
+                        final epsilon = interval * 0.01;
+                        final relPos = (value - minY) / interval;
+                        final isOn =
+                            (relPos - relPos.roundToDouble()).abs() < epsilon ||
+                            (value - minY).abs() < epsilon ||
+                            (value - maxY).abs() < epsilon;
+                        if (!isOn) return const SizedBox.shrink();
+
+                        String dv;
+                        if (value == value.toInt()) {
+                          dv = value.toInt().toString();
+                        } else if (interval < 1) {
+                          dv = value
+                              .toStringAsFixed(2)
+                              .replaceAll(RegExp(r'0+$'), '')
+                              .replaceAll(RegExp(r'\.$'), '');
+                        } else if (interval < 5) {
+                          dv = value
+                              .toStringAsFixed(1)
+                              .replaceAll(RegExp(r'0+$'), '')
+                              .replaceAll(RegExp(r'\.$'), '');
+                        } else {
+                          dv = value.toInt().toString();
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Text(
+                            "$dv $unit".trim(),
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              color: const Color(0xFF6E6E6E),
+                              fontWeight: FontWeight.w500,
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        );
+                      },
                     ),
                   ),
-                  lineTouchData: fl_chart.LineTouchData(
-                    touchTooltipData: fl_chart.LineTouchTooltipData(
-                      getTooltipColor: (touchedSpot) => Colors.white,
-                      tooltipBorder: const BorderSide(
-                        color: Color(0xFFE4E4E4),
-                        width: 1,
-                      ),
-                      // tooltipRoundedRadius: 8,
-                      tooltipPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      getTooltipItems:
-                          (List<fl_chart.LineBarSpot> touchedBarSpots) {
-                            return touchedBarSpots.map((barSpot) {
-                              final unit = sensorUnits[selectedSensor] ?? "";
-                              final displayValue = selectedSensor == "pH Air"
-                                  ? barSpot.y.toStringAsFixed(2)
-                                  : barSpot.y.toStringAsFixed(1);
-                              return fl_chart.LineTooltipItem(
-                                "$displayValue $unit".trim(),
-                                GoogleFonts.poppins(
-                                  color: Colors.black,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              );
-                            }).toList();
-                          },
-                    ),
-                  ),
-                  lineBarsData: [
-                    fl_chart.LineChartBarData(
-                      isCurved: true,
-                      curveSmoothness: 0.35,
-                      color: const Color(0xFF3558A8),
-                      barWidth: 2.5,
-                      belowBarData: fl_chart.BarAreaData(
-                        show: true,
-                        color: const Color(0xFF3558A8).withOpacity(0.35),
-                      ),
-                      dotData: fl_chart.FlDotData(
-                        show: true,
-                        getDotPainter: (spot, percent, barData, index) {
-                          if (index == getChartData().length - 1) {
-                            return fl_chart.FlDotCirclePainter(
-                              radius: 4,
-                              color: const Color(0xFFE53935),
-                              strokeWidth: 2,
-                              strokeColor: Colors.white,
-                            );
-                          }
-                          return fl_chart.FlDotCirclePainter(
-                            radius: 0,
-                            color: Colors.transparent,
-                          );
-                        },
-                      ),
-                      spots: getChartData(),
-                    ),
-                  ],
                 ),
+                lineTouchData: fl_chart.LineTouchData(
+                  touchTooltipData: fl_chart.LineTouchTooltipData(
+                    getTooltipColor: (_) => Colors.white,
+                    tooltipBorder: const BorderSide(
+                      color: Color(0xFFE4E4E4),
+                      width: 1,
+                    ),
+                    tooltipPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    getTooltipItems: (touchedBarSpots) {
+                      return touchedBarSpots.map((barSpot) {
+                        final unit = sensorUnits[selectedSensor] ?? "";
+                        final dv = selectedSensor == "pH Air"
+                            ? barSpot.y.toStringAsFixed(2)
+                            : barSpot.y.toStringAsFixed(1);
+                        return fl_chart.LineTooltipItem(
+                          "$dv $unit".trim(),
+                          GoogleFonts.poppins(
+                            color: Colors.black,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        );
+                      }).toList();
+                    },
+                  ),
+                ),
+                lineBarsData: [
+                  fl_chart.LineChartBarData(
+                    isCurved: true,
+                    curveSmoothness: 0.35,
+                    color: const Color(0xFF3558A8),
+                    barWidth: 2.5,
+                    belowBarData: fl_chart.BarAreaData(
+                      show: true,
+                      color: const Color(0xFF3558A8).withOpacity(0.35),
+                    ),
+                    dotData: fl_chart.FlDotData(
+                      show: true,
+                      getDotPainter: (spot, percent, barData, index) {
+                        if (spots.isNotEmpty && index == spots.length - 1) {
+                          return fl_chart.FlDotCirclePainter(
+                            radius: 4,
+                            color: const Color(0xFFE53935),
+                            strokeWidth: 2,
+                            strokeColor: Colors.white,
+                          );
+                        }
+                        return fl_chart.FlDotCirclePainter(
+                          radius: 0,
+                          color: Colors.transparent,
+                        );
+                      },
+                    ),
+                    spots: spots,
+                  ),
+                ],
               ),
             ),
           ),
 
           const SizedBox(height: 18),
 
-          /// ===== FILTER HARI =====
+          // Filter Hari
           Row(
             children: [
               _dayButton(
                 "7 Hari",
                 selectedDay == "7 Hari",
-                () => selectDay("7 Hari"),
+                () => setState(() => selectedDay = "7 Hari"),
               ),
               const SizedBox(width: 5),
               _dayButton(
                 "1 Bulan",
                 selectedDay == "1 Bulan",
-                () => selectDay("1 Bulan"),
+                () => setState(() => selectedDay = "1 Bulan"),
               ),
               const SizedBox(width: 5),
               _dayButton(
                 "3 Bulan",
                 selectedDay == "3 Bulan",
-                () => selectDay("3 Bulan"),
+                () => setState(() => selectedDay = "3 Bulan"),
               ),
               const SizedBox(width: 5),
               _dayButton(
                 "6 Bulan",
                 selectedDay == "6 Bulan",
-                () => selectDay("6 Bulan"),
+                () => setState(() => selectedDay = "6 Bulan"),
               ),
               const SizedBox(width: 5),
               _dayButton(
                 "1 Tahun",
                 selectedDay == "1 Tahun",
-                () => selectDay("1 Tahun"),
+                () => setState(() => selectedDay = "1 Tahun"),
               ),
             ],
           ),
@@ -682,7 +523,7 @@ class _ChartCardState extends State<_ChartCard> {
 
   Widget _sensorChip(String text, bool active) {
     return GestureDetector(
-      onTap: () => selectSensor(text),
+      onTap: () => setState(() => selectedSensor = text),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -701,6 +542,9 @@ class _ChartCardState extends State<_ChartCard> {
   }
 }
 
+// =====================================================================
+// TEMPAT PAKAN CONTROL
+// =====================================================================
 class TempatPakanControl extends StatefulWidget {
   const TempatPakanControl({super.key});
 
@@ -709,99 +553,216 @@ class TempatPakanControl extends StatefulWidget {
 }
 
 class _TempatPakanControlState extends State<TempatPakanControl> {
-  // true = buka, false = tutup
   bool isOpen = false;
-  // true = on, false = off
   bool isOn = false;
+  bool loading = false;
+  String status = '';
 
-  void _toggleOpen() {
-    setState(() {
-      isOpen = !isOpen;
-    });
+  Timer? _statusTimeout;
+
+  late final DocumentReference docRef;
+  late final StreamSubscription _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    docRef = FirebaseFirestore.instanceFor(
+      app: Firebase.app(),
+      databaseId: 'aquasense',
+    ).collection('servo_control').doc('device_1');
+
+    // ✅ Realtime listener Firestore
+    _subscription = docRef.snapshots().listen(
+      (doc) {
+        if (!doc.exists || !mounted) return;
+
+        final data = doc.data() as Map<String, dynamic>;
+        final s = data['status']?.toString() ?? '';
+
+        setState(() {
+          isOpen = (data['command']?.toString() ?? '0') == '1';
+          isOn = data['power'] as bool? ?? false;
+
+          // ✅ Update status hanya dari 'completed'
+          // 'pending' dihandle oleh send() dan timeout
+          if (s == 'completed') {
+            status = '✓ Selesai';
+            _statusTimeout?.cancel(); // cancel timeout jika ESP32 sudah balas
+          }
+        });
+      },
+      onError: (e) {
+        if (!mounted) return;
+        setState(() => status = 'Koneksi error');
+      },
+    );
   }
 
-  void _togglePower() {
+  @override
+  void dispose() {
+    _statusTimeout?.cancel();
+    _subscription.cancel();
+    super.dispose();
+  }
+
+  // ================= SEND COMMAND =================
+  Future<void> send({String? command, bool? power}) async {
+    if (loading) return;
+
     setState(() {
-      isOn = !isOn;
-      // When powering on, mark the dispenser as open and show green label.
-      if (isOn) {
-        isOpen = true;
-      } else {
-        isOpen = false;
-      }
+      loading = true;
+      status = 'Mengirim...';
     });
+
+    try {
+      final Map<String, dynamic> updates = {
+        'status': 'pending',
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (command != null) updates['command'] = command;
+      if (power != null) updates['power'] = power;
+
+      await docRef.set(updates, SetOptions(merge: true));
+
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        status = 'Terkirim';
+      });
+
+      // ✅ Timeout 5 detik: jika ESP32 tidak balas, hapus status
+      _statusTimeout?.cancel();
+      _statusTimeout = Timer(const Duration(seconds: 5), () {
+        if (!mounted) return;
+        setState(() => status = '');
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        status = 'Gagal terkirim';
+      });
+    }
+  }
+
+  void toggleOpen() {
+    if (!isOn || loading) return;
+    send(command: isOpen ? '0' : '1');
+  }
+
+  void togglePower() {
+    if (loading) return;
+    if (isOn) {
+      // ✅ Matikan power + tutup servo sekaligus
+      send(power: false, command: '0');
+    } else {
+      send(power: true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final label = isOpen ? 'Buka' : 'Tutup';
-    final leftIcon = isOpen
-        ? 'assets/icons/bukaPakan.png'
-        : 'assets/icons/tutupPakan.png';
-    final rightIcon = isOn
-        ? 'assets/icons/onPakan.png'
-        : 'assets/icons/offPakan.png';
-
     return Container(
-      width: 333,
-      height: 85,
-      padding: const EdgeInsets.fromLTRB(16, 23, 16, 19),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFE4E4E4), width: 1.5),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          // ===== KIRI: OPEN/CLOSE =====
           GestureDetector(
-            onTap: _toggleOpen,
+            onTap: loading ? null : toggleOpen,
             child: Row(
               children: [
-                Image.asset(leftIcon, width: 33, height: 34),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: loading
+                      ? const SizedBox(
+                          key: ValueKey('loading'),
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Color(0xFF3558A8),
+                          ),
+                        )
+                      : Icon(
+                          key: ValueKey('icon_$isOpen'),
+                          isOpen ? Icons.lock_open_rounded : Icons.lock_rounded,
+                          size: 28,
+                          color: !isOn
+                              ? Colors.grey.shade400
+                              : isOpen
+                              ? const Color(0xFF3558A8)
+                              : const Color(0xFF1D2625),
+                        ),
+                ),
+
                 const SizedBox(width: 12),
+
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Tempat Pakan',
                       style: GoogleFonts.poppins(
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        fontSize: 16,
+                        color: const Color(0xFF1D2625),
                       ),
                     ),
                     Text(
-                      label,
+                      isOn ? (isOpen ? 'Terbuka' : 'Tertutup') : 'Nonaktif',
                       style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: isOpen ? const Color(0xFF52B888) : Colors.grey,
+                        fontSize: 12,
+                        color: isOn
+                            ? (isOpen
+                                  ? const Color(0xFF3558A8)
+                                  : const Color(0xFF97A09F))
+                            : Colors.grey.shade400,
                       ),
                     ),
+                    if (status.isNotEmpty)
+                      Text(
+                        status,
+                        style: GoogleFonts.poppins(
+                          fontSize: 10,
+                          color: status.contains('✓')
+                              ? Colors.green
+                              : status.contains('Gagal') ||
+                                    status.contains('error')
+                              ? Colors.red
+                              : const Color(0xFF97A09F),
+                        ),
+                      ),
                   ],
                 ),
               ],
             ),
           ),
 
-          // Power icon on the right; clicking toggles on/off
+          // ===== KANAN: POWER =====
           GestureDetector(
-            onTap: _togglePower,
-            child: Image.asset(
-              rightIcon,
-              width: 46,
-              height: 46,
-              errorBuilder: (context, error, stackTrace) => Icon(
-                isOn ? Icons.power : Icons.power_off,
+            onTap: loading ? null : togglePower,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isOn
+                    ? const Color(0xFF3558A8).withOpacity(0.1)
+                    : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                isOn
+                    ? Icons.power_settings_new_rounded
+                    : Icons.power_off_rounded,
                 size: 28,
-                color: Colors.grey,
+                color: isOn ? const Color(0xFF3558A8) : Colors.grey.shade400,
               ),
             ),
           ),
