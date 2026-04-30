@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart' as fl_chart;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
 import 'notif.dart';
 
@@ -43,8 +44,30 @@ class SensorData {
 // =====================================================================
 // STATISTIK PAGE
 // =====================================================================
-class StatistikPage extends StatelessWidget {
+class StatistikPage extends StatefulWidget {
   const StatistikPage({super.key});
+
+  @override
+  State<StatistikPage> createState() => _StatistikPageState();
+}
+
+class _StatistikPageState extends State<StatistikPage> {
+  bool hasNotif = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkNotifStatus();
+  }
+
+  Future<void> _checkNotifStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        hasNotif = prefs.getBool('is_anomaly') ?? false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -128,7 +151,9 @@ class StatistikPage extends StatelessWidget {
                           );
                         },
                         child: Image.asset(
-                          "assets/icons/Notif_On.png",
+                          hasNotif
+                              ? "assets/icons/Notif_On.png"
+                              : "assets/icons/Notif_Off.png",
                           width: 24,
                           height: 28,
                         ),
@@ -189,70 +214,140 @@ class _ChartCardState extends State<_ChartCard> {
     "Dissolved Oxygen": "mg/L",
   };
 
-  List<fl_chart.FlSpot> _getSpots() {
-    if (widget.historyData.isEmpty) return [const fl_chart.FlSpot(0, 0)];
-
-    int limit;
+  // =====================================================================
+  // FILTER DATA BERDASARKAN RENTANG HARI
+  // =====================================================================
+  List<SensorData> _getFilteredData() {
+    final now = DateTime.now();
+    int days;
     switch (selectedDay) {
+      case "7 Hari":
+        days = 7;
+        break;
       case "1 Bulan":
-        limit = 28;
+        days = 30;
         break;
       case "3 Bulan":
-        limit = 91;
+        days = 90;
         break;
       case "6 Bulan":
-        limit = 182;
+        days = 180;
         break;
       case "1 Tahun":
-        limit = 365;
+        days = 365;
         break;
       default:
-        limit = 7;
+        days = 7;
     }
-
-    final dataSlice = widget.historyData.take(limit).toList();
-
-    return List.generate(dataSlice.length, (index) {
-      final data = dataSlice[index];
-      double yValue;
-      switch (selectedSensor) {
-        case "Suhu Air":
-          yValue = data.suhuAir;
-          break;
-        case "Suhu Lingkungan":
-          yValue = data.suhuLingkungan;
-          break;
-        case "TDS":
-          yValue = data.tds;
-          break;
-        case "pH Air":
-          yValue = data.phAir;
-          break;
-        case "Turbidity":
-          yValue = data.turbidity;
-          break;
-        case "Dissolved Oxygen":
-          yValue = data.dissolvedOxygen;
-          break;
-        default:
-          yValue = 0;
-      }
-      return fl_chart.FlSpot(index.toDouble(), yValue);
-    });
+    final cutoff = now.subtract(Duration(days: days));
+    return widget.historyData
+        .where((d) => d.updatedAt.isAfter(cutoff))
+        .toList();
   }
 
+  // =====================================================================
+  // MOVING AVERAGE - Centered window untuk smoothing lebih natural
+  // =====================================================================
+  List<double> _movingAverage(List<double> data, int window) {
+    if (data.length <= window) return data;
+    final half = window ~/ 2;
+    List<double> result = [];
+    for (int i = 0; i < data.length; i++) {
+      final start = (i - half).clamp(0, data.length - 1);
+      final end = (i + half).clamp(0, data.length - 1);
+      double sum = 0;
+      for (int j = start; j <= end; j++) {
+        sum += data[j];
+      }
+      result.add(sum / (end - start + 1));
+    }
+    return result;
+  }
+
+  // =====================================================================
+  // DOWNSAMPLE - Ambil titik secara merata (LTTB-inspired sederhana)
+  // =====================================================================
+  List<double> _downsample(List<double> data, int maxPoints) {
+    if (data.length <= maxPoints) return data;
+    final step = data.length / maxPoints;
+    return List.generate(
+      maxPoints,
+      (i) => data[(i * step).round().clamp(0, data.length - 1)],
+    );
+  }
+
+  // =====================================================================
+  // GET SPOTS - Pipeline: filter → MA besar → downsample → MA halus
+  // =====================================================================
+  List<fl_chart.FlSpot> _getSpots() {
+    final dataSlice = _getFilteredData();
+    if (dataSlice.isEmpty) return [const fl_chart.FlSpot(0, 0)];
+
+    // 1. Ambil nilai sensor
+    List<double> yValues = dataSlice.map((data) {
+      switch (selectedSensor) {
+        case "Suhu Air":
+          return data.suhuAir;
+        case "Suhu Lingkungan":
+          return data.suhuLingkungan;
+        case "TDS":
+          return data.tds;
+        case "pH Air":
+          return data.phAir;
+        case "Turbidity":
+          return data.turbidity;
+        case "Dissolved Oxygen":
+          return data.dissolvedOxygen;
+        default:
+          return 0.0;
+      }
+    }).toList();
+
+    // 2. Moving average pertama (window besar sesuai jumlah data)
+    int window;
+    if (yValues.length > 200) {
+      window = 25;
+    } else if (yValues.length > 100) {
+      window = 15;
+    } else if (yValues.length > 50) {
+      window = 9;
+    } else if (yValues.length > 20) {
+      window = 5;
+    } else {
+      window = 3;
+    }
+    List<double> smoothY = _movingAverage(yValues, window);
+
+    // 3. Downsample ke maksimal 50 titik agar grafik tidak keriting
+    const int maxPoints = 50;
+    List<double> downsampled = _downsample(smoothY, maxPoints);
+
+    // 4. Moving average kedua setelah downsample untuk hasil akhir yang mulus
+    List<double> finalSmooth = _movingAverage(downsampled, 5);
+
+    return List.generate(
+      finalSmooth.length,
+      (i) => fl_chart.FlSpot(i.toDouble(), finalSmooth[i]),
+    );
+  }
+
+  // =====================================================================
+  // Y-AXIS HELPERS
+  // =====================================================================
   double _getMinY(List<fl_chart.FlSpot> spots) {
     if (spots.isEmpty) return 0;
-    double min = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
-    double max = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
-    return (min - (max - min) * 0.15).clamp(0, double.infinity);
+    final min = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
+    final max = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    final padding = (max - min) * 0.2;
+    return (min - padding).clamp(0, double.infinity);
   }
 
   double _getMaxY(List<fl_chart.FlSpot> spots) {
     if (spots.isEmpty) return 10;
-    double min = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
-    double max = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
-    return max + (max - min) * 0.15;
+    final min = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
+    final max = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    final padding = (max - min) * 0.2;
+    return max + padding;
   }
 
   double _calculateOptimalInterval(double minY, double maxY) {
@@ -271,6 +366,9 @@ class _ChartCardState extends State<_ChartCard> {
     return magnitude * 10;
   }
 
+  // =====================================================================
+  // BUILD
+  // =====================================================================
   @override
   Widget build(BuildContext context) {
     final spots = _getSpots();
@@ -299,13 +397,22 @@ class _ChartCardState extends State<_ChartCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ===== CHART =====
           SizedBox(
             height: 260,
             child: fl_chart.LineChart(
               fl_chart.LineChartData(
                 minY: minY,
                 maxY: maxY,
-                gridData: const fl_chart.FlGridData(show: false),
+                gridData: fl_chart.FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: interval,
+                  getDrawingHorizontalLine: (value) => const fl_chart.FlLine(
+                    color: Color(0xFFF0F0F0),
+                    strokeWidth: 1,
+                  ),
+                ),
                 borderData: fl_chart.FlBorderData(show: false),
                 titlesData: fl_chart.FlTitlesData(
                   topTitles: const fl_chart.AxisTitles(
@@ -396,16 +503,25 @@ class _ChartCardState extends State<_ChartCard> {
                 lineBarsData: [
                   fl_chart.LineChartBarData(
                     isCurved: true,
-                    curveSmoothness: 0.35,
+                    curveSmoothness: 0.5, // ← lebih smooth
+                    preventCurveOverShooting: true, // ← cegah overshoot
                     color: const Color(0xFF3558A8),
                     barWidth: 2.5,
                     belowBarData: fl_chart.BarAreaData(
                       show: true,
-                      color: const Color(0xFF3558A8).withOpacity(0.35),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          const Color(0xFF3558A8).withOpacity(0.30),
+                          const Color(0xFF3558A8).withOpacity(0.02),
+                        ],
+                      ),
                     ),
                     dotData: fl_chart.FlDotData(
                       show: true,
                       getDotPainter: (spot, percent, barData, index) {
+                        // Hanya tampilkan dot di titik terakhir
                         if (spots.isNotEmpty && index == spots.length - 1) {
                           return fl_chart.FlDotCirclePainter(
                             radius: 4,
@@ -424,44 +540,48 @@ class _ChartCardState extends State<_ChartCard> {
                   ),
                 ],
               ),
+              duration: const Duration(milliseconds: 400), // animasi transisi
             ),
           ),
 
           const SizedBox(height: 18),
 
-          // Filter Hari
-          Row(
-            children: [
-              _dayButton(
-                "7 Hari",
-                selectedDay == "7 Hari",
-                () => setState(() => selectedDay = "7 Hari"),
-              ),
-              const SizedBox(width: 5),
-              _dayButton(
-                "1 Bulan",
-                selectedDay == "1 Bulan",
-                () => setState(() => selectedDay = "1 Bulan"),
-              ),
-              const SizedBox(width: 5),
-              _dayButton(
-                "3 Bulan",
-                selectedDay == "3 Bulan",
-                () => setState(() => selectedDay = "3 Bulan"),
-              ),
-              const SizedBox(width: 5),
-              _dayButton(
-                "6 Bulan",
-                selectedDay == "6 Bulan",
-                () => setState(() => selectedDay = "6 Bulan"),
-              ),
-              const SizedBox(width: 5),
-              _dayButton(
-                "1 Tahun",
-                selectedDay == "1 Tahun",
-                () => setState(() => selectedDay = "1 Tahun"),
-              ),
-            ],
+          // ===== FILTER HARI =====
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _dayButton(
+                  "7 Hari",
+                  selectedDay == "7 Hari",
+                  () => setState(() => selectedDay = "7 Hari"),
+                ),
+                const SizedBox(width: 5),
+                _dayButton(
+                  "1 Bulan",
+                  selectedDay == "1 Bulan",
+                  () => setState(() => selectedDay = "1 Bulan"),
+                ),
+                const SizedBox(width: 5),
+                _dayButton(
+                  "3 Bulan",
+                  selectedDay == "3 Bulan",
+                  () => setState(() => selectedDay = "3 Bulan"),
+                ),
+                const SizedBox(width: 5),
+                _dayButton(
+                  "6 Bulan",
+                  selectedDay == "6 Bulan",
+                  () => setState(() => selectedDay = "6 Bulan"),
+                ),
+                const SizedBox(width: 5),
+                _dayButton(
+                  "1 Tahun",
+                  selectedDay == "1 Tahun",
+                  () => setState(() => selectedDay = "1 Tahun"),
+                ),
+              ],
+            ),
           ),
 
           const SizedBox(height: 20),
@@ -584,11 +704,9 @@ class _TempatPakanControlState extends State<TempatPakanControl> {
           isOpen = (data['command']?.toString() ?? '0') == '1';
           isOn = data['power'] as bool? ?? false;
 
-          // ✅ Update status hanya dari 'completed'
-          // 'pending' dihandle oleh send() dan timeout
           if (s == 'completed') {
             status = '✓ Selesai';
-            _statusTimeout?.cancel(); // cancel timeout jika ESP32 sudah balas
+            _statusTimeout?.cancel();
           }
         });
       },
@@ -631,7 +749,6 @@ class _TempatPakanControlState extends State<TempatPakanControl> {
         status = 'Terkirim';
       });
 
-      // ✅ Timeout 5 detik: jika ESP32 tidak balas, hapus status
       _statusTimeout?.cancel();
       _statusTimeout = Timer(const Duration(seconds: 5), () {
         if (!mounted) return;
@@ -654,7 +771,6 @@ class _TempatPakanControlState extends State<TempatPakanControl> {
   void togglePower() {
     if (loading) return;
     if (isOn) {
-      // ✅ Matikan power + tutup servo sekaligus
       send(power: false, command: '0');
     } else {
       send(power: true);
@@ -690,15 +806,15 @@ class _TempatPakanControlState extends State<TempatPakanControl> {
                             color: Color(0xFF3558A8),
                           ),
                         )
-                      : Icon(
+                      : Image.asset(
                           key: ValueKey('icon_$isOpen'),
-                          isOpen ? Icons.lock_open_rounded : Icons.lock_rounded,
-                          size: 28,
-                          color: !isOn
-                              ? Colors.grey.shade400
+                          !isOn
+                              ? "assets/icons/offPakan.png"
                               : isOpen
-                              ? const Color(0xFF3558A8)
-                              : const Color(0xFF1D2625),
+                              ? "assets/icons/bukaPakan.png"
+                              : "assets/icons/tutupPakan.png",
+                          width: 28,
+                          height: 28,
                         ),
                 ),
 
@@ -757,12 +873,10 @@ class _TempatPakanControlState extends State<TempatPakanControl> {
                     : Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(
-                isOn
-                    ? Icons.power_settings_new_rounded
-                    : Icons.power_off_rounded,
-                size: 28,
-                color: isOn ? const Color(0xFF3558A8) : Colors.grey.shade400,
+              child: Image.asset(
+                isOn ? "assets/icons/onPakan.png" : "assets/icons/offPakan.png",
+                width: 28,
+                height: 28,
               ),
             ),
           ),
