@@ -71,17 +71,17 @@ class TentangAplikasiPage extends StatelessWidget {
 
                       const SizedBox(height: 20),
 
-                      _sectionTitle("Halaman Login"),
-                      _bodyText(
-                        "Halaman Login berfungsi untuk mengakses aplikasi ini, pengguna diminta memasukan email dan password yang sudah dibuat sebelumnya.",
-                      ),
+                      // _sectionTitle("Halaman Login"),
+                      // _bodyText(
+                      //   "Halaman Login berfungsi untuk mengakses aplikasi ini, pengguna diminta memasukan email dan password yang sudah dibuat sebelumnya.",
+                      // ),
 
                       const SizedBox(height: 16),
 
-                      _sectionTitle("Halaman Sign Up"),
-                      _bodyText(
-                        "Halaman Sign Up disini berfungsi untuk proses pendaftaran pengguna yang belum memiliki akun, pengguna diminta memasukan data pada form sign up untuk disimpan kedalam database.",
-                      ),
+                      // _sectionTitle("Halaman Sign Up"),
+                      // _bodyText(
+                      //   "Halaman Sign Up disini berfungsi untuk proses pendaftaran pengguna yang belum memiliki akun, pengguna diminta memasukan data pada form sign up untuk disimpan kedalam database.",
+                      // ),
 
                       const SizedBox(height: 16),
 
@@ -101,7 +101,7 @@ class TentangAplikasiPage extends StatelessWidget {
 
                       _sectionTitle("Halaman Profil"),
                       _bodyText(
-                        "Halaman Profil berisi informasi tentang aplikasi dan terdapat logout untuk keluar dari aplikasi.",
+                        "Halaman Profil berisi informasi tentang aplikasi.",
                       ),
 
                       const SizedBox(height: 30),

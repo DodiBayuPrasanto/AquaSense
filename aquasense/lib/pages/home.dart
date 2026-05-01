@@ -20,12 +20,12 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> dataBuffer = [];
   int windowSize = 20;
 
+  // Counter buffer yang sudah dianalisis (untuk menunggu 20 data baru berikutnya)
+  int _analyzedBufferCount = 0;
+
   bool hasNotif = false;
   int stokPakan = 0;
   String kondisiKolam = "menunggu data...";
-
-  Map<String, dynamic>? rekomendasiAi;
-  Map<String, dynamic>? featureScores;
 
   // Data sensor saat ini
   double currentTempAir = 0;
@@ -35,15 +35,40 @@ class _HomePageState extends State<HomePage> {
   double currentTDS = 0;
   double currentTempLingkungan = 0;
 
-  Future<void> _fetchPrediction() async {
-    setState(() {
-      isLoading = true;
-    });
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedNotifState();
+  }
+
+  /// Muat status notifikasi yang tersimpan agar icon langsung sinkron saat app dibuka
+  Future<void> _loadSavedNotifState() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final isAnomaly = prefs.getBool('is_anomaly') ?? false;
+    final notifOpened = prefs.getBool('notif_opened') ?? true;
+
+    if (mounted) {
+      setState(() {
+        // Notif aktif jika ada anomaly DAN belum dibuka
+        hasNotif = isAnomaly && !notifOpened;
+
+        kondisiKolam = isAnomaly ? "buruk" : "menunggu data...";
+      });
+    }
+  }
+
+  /// Auto-analisis dipanggil setiap kali buffer genap 20 data baru terkumpul
+  Future<void> _autoAnalyze() async {
+    if (isLoading) return;
+    if (dataBuffer.length < windowSize) return;
+
+    setState(() => isLoading = true);
 
     try {
-      debugPrint('Memulai analisis manual via tombol...');
+      debugPrint('[Auto] Memulai analisis otomatis...');
       final responseData = await _apiService.checkAnomaly(dataBuffer);
-      bool isAnomaly = responseData['is_anomaly'] ?? false;
+      final bool isAnomaly = responseData['is_anomaly'] ?? false;
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('is_anomaly', isAnomaly);
@@ -52,34 +77,47 @@ class _HomePageState extends State<HomePage> {
         DateTime.now().toIso8601String(),
       );
 
+      // Simpan detail rekomendasi ke SharedPreferences agar bisa dibaca NotifPage
+      if (isAnomaly) {
+        final rekomendasi =
+            responseData['rekomendasi'] as Map<String, dynamic>?;
+        final featureScores =
+            responseData['feature_scores'] as Map<String, dynamic>?;
+
+        await prefs.setString('anomaly_head', rekomendasi?['head'] ?? '');
+        await prefs.setString('anomaly_title', rekomendasi?['title'] ?? '');
+
+        // Simpan feature scores sebagai JSON string
+        if (featureScores != null) {
+          final worstEntry = featureScores.entries
+              .reduce((a, b) => (a.value as double) > (b.value as double) ? a : b);
+          await prefs.setString('anomaly_worst_feature', worstEntry.key);
+          await prefs.setDouble(
+              'anomaly_worst_score', (worstEntry.value as double));
+        }
+      } else {
+        // Reset data anomali jika kondisi normal
+        await prefs.remove('anomaly_head');
+        await prefs.remove('anomaly_title');
+        await prefs.remove('anomaly_worst_feature');
+        await prefs.remove('anomaly_worst_score');
+      }
+
       if (mounted) {
         setState(() {
           kondisiKolam = isAnomaly ? "buruk" : "baik";
           hasNotif = isAnomaly;
-          if (isAnomaly) {
-            rekomendasiAi = responseData['rekomendasi'];
-            featureScores = responseData['feature_scores'];
-          } else {
-            rekomendasiAi = null;
-            featureScores = null;
-          }
+          // Reset counter buffer — tunggu 20 data baru lagi untuk analisis berikutnya
+          _analyzedBufferCount = dataBuffer.length;
         });
       }
     } catch (e) {
-      debugPrint("AI Error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Gagal analisis: ${e.toString()}")),
-        );
-      }
+      debugPrint('[Auto] AI Error: $e');
     } finally {
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
-  /// Format nilai sensor menjadi 2 angka di belakang koma
   String _fmt(double value) => value.toStringAsFixed(2);
 
   Color getStokColor(int persen) {
@@ -105,7 +143,6 @@ class _HomePageState extends State<HomePage> {
     final isTablet = mediaQuery.size.shortestSide >= 600;
     final horizontalPadding = isTablet ? 48.0 : 16.0;
 
-    // STREAM FIRESTORE: Hanya untuk sinkronisasi UI Sensor
     final Stream<QuerySnapshot> _sensorStream =
         FirebaseFirestore.instanceFor(
               app: Firebase.app(),
@@ -132,19 +169,17 @@ class _HomePageState extends State<HomePage> {
 
             final docs = snapshot.data!.docs;
             if (docs.isNotEmpty) {
-              // Update state data sensor saat ini untuk tampilan Grid
               final latest = docs.first.data() as Map<String, dynamic>;
               currentTempAir = (latest['suhu_air'] ?? 0).toDouble();
               currentDO = (latest['dissolved_oxygen'] ?? 0).toDouble();
               currentTurbidity = (latest['turbidity'] ?? 0).toDouble();
               currentPH = (latest['pH_air'] ?? 0).toDouble();
-              currentTDS = (latest['tds'] ?? 0).toDouble(); // ← FIX: tambah TDS
-              currentTempLingkungan = (latest['suhu_lingkungan'] ?? 0)
-                  .toDouble(); // ← FIX: tambah Suhu Lingkungan
+              currentTDS = (latest['tds'] ?? 0).toDouble();
+              currentTempLingkungan =
+                  (latest['suhu_lingkungan'] ?? 0).toDouble();
               stokPakan = (latest['pakan_percent'] ?? 0).toInt();
 
-              // Memasukkan data terbaru ke buffer (tanpa auto-trigger)
-              dataBuffer = docs
+              final newBuffer = docs
                   .map((doc) {
                     final d = doc.data() as Map<String, dynamic>;
                     return {
@@ -157,6 +192,24 @@ class _HomePageState extends State<HomePage> {
                   .toList()
                   .reversed
                   .toList();
+
+              // Update buffer
+              dataBuffer = newBuffer;
+
+              // Hitung berapa data baru sejak analisis terakhir
+              final newDataCount = dataBuffer.length - _analyzedBufferCount;
+
+              // Trigger analisis otomatis:
+              // - Pertama kali: saat buffer sudah penuh 20
+              // - Berikutnya: setiap ada 20 data baru masuk setelah analisis sebelumnya
+              if (!isLoading &&
+                  dataBuffer.length >= windowSize &&
+                  (_analyzedBufferCount == 0 || newDataCount >= windowSize)) {
+                // Jalankan setelah frame selesai build agar tidak setState di dalam build
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _autoAnalyze();
+                });
+              }
             }
 
             return SingleChildScrollView(
@@ -195,7 +248,8 @@ class _HomePageState extends State<HomePage> {
                       ),
                       GestureDetector(
                         onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const NotifPage()),
+                          MaterialPageRoute(
+                              builder: (_) => const NotifPage()),
                         ),
                         child: Image.asset(
                           hasNotif
@@ -220,7 +274,8 @@ class _HomePageState extends State<HomePage> {
                     ),
                     child: Row(
                       children: [
-                        Image.asset("assets/LOGO4.png", width: 38, height: 40),
+                        Image.asset("assets/LOGO4.png",
+                            width: 38, height: 40),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
@@ -238,94 +293,65 @@ class _HomePageState extends State<HomePage> {
 
                   const SizedBox(height: 15),
 
-                  /// TOMBOL ANALISIS MANUAL
-                  SizedBox(
+                  /// INDIKATOR STATUS ANALISIS (pengganti tombol)
+                  Container(
                     width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: isLoading ? null : _fetchPrediction,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF3558A8),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        disabledBackgroundColor: Colors.grey.shade400,
-                      ),
-                      child: isLoading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : Text(
-                              dataBuffer.length < windowSize
-                                  ? "Kumpulkan Data (${dataBuffer.length}/$windowSize)"
-                                  : "Mulai Analisis AI",
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 14, horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF2F7),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFD0D5DD)),
+                    ),
+                    child: Row(
+                      children: [
+                        if (isLoading)
+                          const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF3558A8),
                             ),
+                          )
+                        else
+                          Image.asset(
+                            'assets/Logo3.png',
+                            width: 18,
+                            height: 18,
+                            color: dataBuffer.length >= windowSize
+                                ? const Color(0xFF3558A8)
+                                : Colors.grey,
+                          ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            isLoading
+                                ? "Sedang menganalisis kondisi kolam..."
+                                : dataBuffer.length < windowSize
+                                    ? "Mengumpulkan data: ${dataBuffer.length}/$windowSize"
+                                    : "Analisis AI aktif — memantau otomatis setiap $windowSize data",
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: const Color(0xFF3558A8),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 
                   if (isLoading)
                     const Padding(
-                      padding: EdgeInsets.only(top: 10),
+                      padding: EdgeInsets.only(top: 6),
                       child: LinearProgressIndicator(
                         minHeight: 2,
                         color: Color(0xFF3558A8),
                       ),
                     ),
 
-                  const SizedBox(height: 15),
-
-                  /// BOX REKOMENDASI AI
-                  if (rekomendasiAi != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFEBEE),
-                        border: Border.all(color: const Color(0xFFFF0100)),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.warning_amber_rounded,
-                                color: Color(0xFFFF0100),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  rekomendasiAi!['head'] ?? "Peringatan",
-                                  style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.bold,
-                                    color: const Color(0xFFFF0100),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            rekomendasiAi!['title'] ?? "",
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 15),
-                  ],
+                  const SizedBox(height: 20),
 
                   /// GRID SENSOR
                   Text(
@@ -405,7 +431,8 @@ class _HomePageState extends State<HomePage> {
                     ),
                     child: Row(
                       children: [
-                        Image.asset("assets/LOGO4.png", width: 36, height: 36),
+                        Image.asset("assets/LOGO4.png",
+                            width: 36, height: 36),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(

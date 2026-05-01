@@ -62,9 +62,14 @@ class _StatistikPageState extends State<StatistikPage> {
 
   Future<void> _checkNotifStatus() async {
     final prefs = await SharedPreferences.getInstance();
+
+    final isAnomaly = prefs.getBool('is_anomaly') ?? false;
+    final notifOpened = prefs.getBool('notif_opened') ?? true;
+
     if (mounted) {
       setState(() {
-        hasNotif = prefs.getBool('is_anomaly') ?? false;
+        // notif nyala jika ada anomaly dan belum dibuka
+        hasNotif = isAnomaly && !notifOpened;
       });
     }
   }
@@ -143,12 +148,15 @@ class _StatistikPageState extends State<StatistikPage> {
                         ],
                       ),
                       GestureDetector(
-                        onTap: () {
-                          Navigator.of(context).push(
+                        onTap: () async {
+                          await Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => const NotifPage(),
                             ),
                           );
+
+                          // refresh status notif setelah notif dibuka
+                          _checkNotifStatus();
                         },
                         child: Image.asset(
                           hasNotif

@@ -22,7 +22,7 @@ class _NotifPageState extends State<NotifPage> {
   // Fungsi untuk mengambil data dari SharedPreferences
   Future<void> _loadNotificationData() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Ambil data yang disimpan oleh HomePage
     bool isAnomaly = prefs.getBool('is_anomaly') ?? false;
     String? head = prefs.getString('anomaly_head');
@@ -89,84 +89,85 @@ class _NotifPageState extends State<NotifPage> {
             color: Colors.grey.shade300,
           ),
           const SizedBox(height: 20),
-          
+
           Expanded(
             child: isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : notifList.isEmpty
-                    ? _buildEmptyState()
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: notifList.length,
-                        separatorBuilder: (_, __) =>
-                            const Divider(color: Colors.black12, thickness: 1),
-                        itemBuilder: (context, index) {
-                          final item = notifList[index];
+                ? _buildEmptyState()
+                : ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: notifList.length,
+                    separatorBuilder: (_, __) =>
+                        const Divider(color: Colors.black12, thickness: 1),
+                    itemBuilder: (context, index) {
+                      final item = notifList[index];
 
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Image.asset(
-                                  "assets/icons/Pesan.png",
-                                  width: 25,
-                                  height: 25,
-                                ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Image.asset(
+                              "assets/icons/Pesan.png",
+                              width: 25,
+                              height: 25,
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            "Peringatan",
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
-                                              color: Colors.black54,
-                                            ),
-                                          ),
-                                          Text(
-                                            item["time"] ?? "",
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w400,
-                                              color: Colors.black54,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
                                       Text(
-                                        item["title"] ?? "",
+                                        "Peringatan",
                                         style: GoogleFonts.poppins(
-                                          fontSize: 18, // Ukuran disesuaikan agar proporsional
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.black,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.black54,
                                         ),
                                       ),
-                                      const SizedBox(height: 6),
                                       Text(
-                                        item["subtitle"] ?? "",
+                                        item["time"] ?? "",
                                         style: GoogleFonts.poppins(
-                                          fontSize: 14,
+                                          fontSize: 12,
                                           fontWeight: FontWeight.w400,
-                                          height: 1.4,
-                                          color: const Color(0xFF414247),
+                                          color: Colors.black54,
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    item["title"] ?? "",
+                                    style: GoogleFonts.poppins(
+                                      fontSize:
+                                          18, // Ukuran disesuaikan agar proporsional
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    item["subtitle"] ?? "",
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w400,
+                                      height: 1.4,
+                                      color: const Color(0xFF414247),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          );
-                        },
-                      ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -179,7 +180,11 @@ class _NotifPageState extends State<NotifPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.check_circle_outline, size: 80, color: Colors.grey.shade400),
+          Icon(
+            Icons.check_circle_outline,
+            size: 80,
+            color: Colors.grey.shade400,
+          ),
           const SizedBox(height: 16),
           Text(
             "Tidak Ada Peringatan",
@@ -191,10 +196,7 @@ class _NotifPageState extends State<NotifPage> {
           ),
           Text(
             "Kondisi kolam Anda saat ini normal.",
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              color: Colors.grey,
-            ),
+            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
           ),
         ],
       ),

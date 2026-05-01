@@ -19,47 +19,47 @@ class ProfilPage extends StatelessWidget {
               /// ================================
               /// CARD PROFILE
               /// ================================
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 18,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFE0E0E0)),
-                ),
-                child: Row(
-                  children: [
-                    /// AVATAR IMAGE
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Dodi Bayu Prasanto",
-                            style: GoogleFonts.poppins(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF414247),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            "dodi@gmail.com",
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: const Color(0xFF9E9E9E),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // Container(
+              //   width: double.infinity,
+              //   padding: const EdgeInsets.symmetric(
+              //     horizontal: 20,
+              //     vertical: 18,
+              //   ),
+              //   decoration: BoxDecoration(
+              //     color: Colors.white,
+              //     borderRadius: BorderRadius.circular(20),
+              //     border: Border.all(color: const Color(0xFFE0E0E0)),
+              //   ),
+              //   child: Row(
+              //     children: [
+              //       /// AVATAR IMAGE
+              //       const SizedBox(width: 14),
+              //       Expanded(
+              //         child: Column(
+              //           crossAxisAlignment: CrossAxisAlignment.start,
+              //           children: [
+              //             Text(
+              //               "Dodi Bayu Prasanto",
+              //               style: GoogleFonts.poppins(
+              //                 fontSize: 20,
+              //                 fontWeight: FontWeight.w600,
+              //                 color: const Color(0xFF414247),
+              //               ),
+              //             ),
+              //             const SizedBox(height: 4),
+              //             Text(
+              //               "dodi@gmail.com",
+              //               style: GoogleFonts.poppins(
+              //                 fontSize: 12,
+              //                 color: const Color(0xFF9E9E9E),
+              //               ),
+              //             ),
+              //           ],
+              //         ),
+              //       ),
+              //     ],
+              //   ),
+              // ),
 
               const SizedBox(height: 20),
 
@@ -119,48 +119,48 @@ class ProfilPage extends StatelessWidget {
               /// ================================
               /// BUTTON LOGOUT
               /// ================================
-              GestureDetector(
-                onTap: () {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const LoginPage()),
-                    (route) => false,
-                  );
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE35D5B),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      /// ICON LOGOUT
-                      Image.asset(
-                        'assets/icons/Logout.png',
-                        width: 22,
-                        height: 22,
-                        fit: BoxFit.contain,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Text(
-                          "LogOut",
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              // GestureDetector(
+              //   onTap: () {
+              //     Navigator.pushAndRemoveUntil(
+              //       context,
+              //       MaterialPageRoute(builder: (_) => const LoginPage()),
+              //       (route) => false,
+              //     );
+              //   },
+              //   child: Container(
+              //     width: double.infinity,
+              //     padding: const EdgeInsets.symmetric(
+              //       horizontal: 16,
+              //       vertical: 16,
+              //     ),
+              //     decoration: BoxDecoration(
+              //       color: const Color(0xFFE35D5B),
+              //       borderRadius: BorderRadius.circular(16),
+              //     ),
+              //     child: Row(
+              //       children: [
+              //         /// ICON LOGOUT
+              //         Image.asset(
+              //           'assets/icons/Logout.png',
+              //           width: 22,
+              //           height: 22,
+              //           fit: BoxFit.contain,
+              //         ),
+              //         const SizedBox(width: 14),
+              //         Expanded(
+              //           child: Text(
+              //             "LogOut",
+              //             style: GoogleFonts.poppins(
+              //               fontSize: 16,
+              //               fontWeight: FontWeight.w600,
+              //               color: Colors.white,
+              //             ),
+              //           ),
+              //         ),
+              //       ],
+              //     ),
+              //   ),
+              // ),
 
               const SizedBox(height: 20),
             ],
