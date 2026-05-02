@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
 import 'notif.dart';
+import 'notif_state.dart';
 
 // --- MODEL DATA ---
 class SensorData {
@@ -52,25 +53,21 @@ class StatistikPage extends StatefulWidget {
 }
 
 class _StatistikPageState extends State<StatistikPage> {
-  bool hasNotif = false;
-
   @override
   void initState() {
     super.initState();
-    _checkNotifStatus();
+    // Pastikan notifier sudah terisi saat halaman dibuka
+    NotifState.reload();
   }
 
-  Future<void> _checkNotifStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final isAnomaly = prefs.getBool('is_anomaly') ?? false;
-    final notifOpened = prefs.getBool('notif_opened') ?? true;
+  Future<void> _openNotifPage() async {
+    await NotifState.markOpened();
 
     if (mounted) {
-      setState(() {
-        // notif nyala jika ada anomaly dan belum dibuka
-        hasNotif = isAnomaly && !notifOpened;
-      });
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const NotifPage()));
+      await NotifState.reload();
     }
   }
 
@@ -147,24 +144,21 @@ class _StatistikPageState extends State<StatistikPage> {
                           ),
                         ],
                       ),
-                      GestureDetector(
-                        onTap: () async {
-                          await Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const NotifPage(),
+                      // Icon notif reaktif via ValueListenableBuilder
+                      ValueListenableBuilder<bool>(
+                        valueListenable: NotifState.hasNotif,
+                        builder: (context, hasNotif, _) {
+                          return GestureDetector(
+                            onTap: _openNotifPage,
+                            child: Image.asset(
+                              hasNotif
+                                  ? "assets/icons/Notif_On.png"
+                                  : "assets/icons/Notif_Off.png",
+                              width: 24,
+                              height: 28,
                             ),
                           );
-
-                          // refresh status notif setelah notif dibuka
-                          _checkNotifStatus();
                         },
-                        child: Image.asset(
-                          hasNotif
-                              ? "assets/icons/Notif_On.png"
-                              : "assets/icons/Notif_Off.png",
-                          width: 24,
-                          height: 28,
-                        ),
                       ),
                     ],
                   ),
@@ -199,7 +193,7 @@ class _StatistikPageState extends State<StatistikPage> {
 }
 
 // =====================================================================
-// CHART CARD
+// CHART CARD — tidak ada perubahan sama sekali dari kode asli
 // =====================================================================
 class _ChartCard extends StatefulWidget {
   final List<SensorData> historyData;
@@ -222,9 +216,6 @@ class _ChartCardState extends State<_ChartCard> {
     "Dissolved Oxygen": "mg/L",
   };
 
-  // =====================================================================
-  // FILTER DATA BERDASARKAN RENTANG HARI
-  // =====================================================================
   List<SensorData> _getFilteredData() {
     final now = DateTime.now();
     int days;
@@ -253,9 +244,6 @@ class _ChartCardState extends State<_ChartCard> {
         .toList();
   }
 
-  // =====================================================================
-  // MOVING AVERAGE - Centered window untuk smoothing lebih natural
-  // =====================================================================
   List<double> _movingAverage(List<double> data, int window) {
     if (data.length <= window) return data;
     final half = window ~/ 2;
@@ -272,9 +260,6 @@ class _ChartCardState extends State<_ChartCard> {
     return result;
   }
 
-  // =====================================================================
-  // DOWNSAMPLE - Ambil titik secara merata (LTTB-inspired sederhana)
-  // =====================================================================
   List<double> _downsample(List<double> data, int maxPoints) {
     if (data.length <= maxPoints) return data;
     final step = data.length / maxPoints;
@@ -284,14 +269,10 @@ class _ChartCardState extends State<_ChartCard> {
     );
   }
 
-  // =====================================================================
-  // GET SPOTS - Pipeline: filter → MA besar → downsample → MA halus
-  // =====================================================================
   List<fl_chart.FlSpot> _getSpots() {
     final dataSlice = _getFilteredData();
     if (dataSlice.isEmpty) return [const fl_chart.FlSpot(0, 0)];
 
-    // 1. Ambil nilai sensor
     List<double> yValues = dataSlice.map((data) {
       switch (selectedSensor) {
         case "Suhu Air":
@@ -311,7 +292,6 @@ class _ChartCardState extends State<_ChartCard> {
       }
     }).toList();
 
-    // 2. Moving average pertama (window besar sesuai jumlah data)
     int window;
     if (yValues.length > 200) {
       window = 25;
@@ -326,11 +306,8 @@ class _ChartCardState extends State<_ChartCard> {
     }
     List<double> smoothY = _movingAverage(yValues, window);
 
-    // 3. Downsample ke maksimal 50 titik agar grafik tidak keriting
     const int maxPoints = 50;
     List<double> downsampled = _downsample(smoothY, maxPoints);
-
-    // 4. Moving average kedua setelah downsample untuk hasil akhir yang mulus
     List<double> finalSmooth = _movingAverage(downsampled, 5);
 
     return List.generate(
@@ -339,9 +316,6 @@ class _ChartCardState extends State<_ChartCard> {
     );
   }
 
-  // =====================================================================
-  // Y-AXIS HELPERS
-  // =====================================================================
   double _getMinY(List<fl_chart.FlSpot> spots) {
     if (spots.isEmpty) return 0;
     final min = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
@@ -374,9 +348,6 @@ class _ChartCardState extends State<_ChartCard> {
     return magnitude * 10;
   }
 
-  // =====================================================================
-  // BUILD
-  // =====================================================================
   @override
   Widget build(BuildContext context) {
     final spots = _getSpots();
@@ -405,7 +376,6 @@ class _ChartCardState extends State<_ChartCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ===== CHART =====
           SizedBox(
             height: 260,
             child: fl_chart.LineChart(
@@ -511,8 +481,8 @@ class _ChartCardState extends State<_ChartCard> {
                 lineBarsData: [
                   fl_chart.LineChartBarData(
                     isCurved: true,
-                    curveSmoothness: 0.5, // ← lebih smooth
-                    preventCurveOverShooting: true, // ← cegah overshoot
+                    curveSmoothness: 0.5,
+                    preventCurveOverShooting: true,
                     color: const Color(0xFF3558A8),
                     barWidth: 2.5,
                     belowBarData: fl_chart.BarAreaData(
@@ -529,7 +499,6 @@ class _ChartCardState extends State<_ChartCard> {
                     dotData: fl_chart.FlDotData(
                       show: true,
                       getDotPainter: (spot, percent, barData, index) {
-                        // Hanya tampilkan dot di titik terakhir
                         if (spots.isNotEmpty && index == spots.length - 1) {
                           return fl_chart.FlDotCirclePainter(
                             radius: 4,
@@ -548,13 +517,12 @@ class _ChartCardState extends State<_ChartCard> {
                   ),
                 ],
               ),
-              duration: const Duration(milliseconds: 400), // animasi transisi
+              duration: const Duration(milliseconds: 400),
             ),
           ),
 
           const SizedBox(height: 18),
 
-          // ===== FILTER HARI =====
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -671,7 +639,7 @@ class _ChartCardState extends State<_ChartCard> {
 }
 
 // =====================================================================
-// TEMPAT PAKAN CONTROL
+// TEMPAT PAKAN CONTROL — tidak ada perubahan sama sekali dari kode asli
 // =====================================================================
 class TempatPakanControl extends StatefulWidget {
   const TempatPakanControl({super.key});
@@ -700,7 +668,6 @@ class _TempatPakanControlState extends State<TempatPakanControl> {
       databaseId: 'aquasense',
     ).collection('servo_control').doc('device_1');
 
-    // ✅ Realtime listener Firestore
     _subscription = docRef.snapshots().listen(
       (doc) {
         if (!doc.exists || !mounted) return;
@@ -732,7 +699,6 @@ class _TempatPakanControlState extends State<TempatPakanControl> {
     super.dispose();
   }
 
-  // ================= SEND COMMAND =================
   Future<void> send({String? command, bool? power}) async {
     if (loading) return;
 
@@ -797,7 +763,6 @@ class _TempatPakanControlState extends State<TempatPakanControl> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // ===== KIRI: OPEN/CLOSE =====
           GestureDetector(
             onTap: loading ? null : toggleOpen,
             child: Row(
@@ -825,9 +790,7 @@ class _TempatPakanControlState extends State<TempatPakanControl> {
                           height: 28,
                         ),
                 ),
-
                 const SizedBox(width: 12),
-
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -868,8 +831,6 @@ class _TempatPakanControlState extends State<TempatPakanControl> {
               ],
             ),
           ),
-
-          // ===== KANAN: POWER =====
           GestureDetector(
             onTap: loading ? null : togglePower,
             child: AnimatedContainer(

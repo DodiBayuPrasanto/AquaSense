@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'notif.dart';
+import 'notif_state.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -20,14 +21,11 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> dataBuffer = [];
   int windowSize = 20;
 
-  // Counter buffer yang sudah dianalisis (untuk menunggu 20 data baru berikutnya)
   int _analyzedBufferCount = 0;
 
-  bool hasNotif = false;
   int stokPakan = 0;
   String kondisiKolam = "menunggu data...";
 
-  // Data sensor saat ini
   double currentTempAir = 0;
   double currentDO = 0;
   double currentTurbidity = 0;
@@ -38,27 +36,23 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _loadSavedNotifState();
+    // Muat status awal dari SharedPreferences ke notifier global
+    NotifState.reload();
   }
 
-  /// Muat status notifikasi yang tersimpan agar icon langsung sinkron saat app dibuka
-  Future<void> _loadSavedNotifState() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final isAnomaly = prefs.getBool('is_anomaly') ?? false;
-    final notifOpened = prefs.getBool('notif_opened') ?? true;
+  Future<void> _openNotifPage() async {
+    // Tandai sudah dibuka sebelum masuk halaman
+    await NotifState.markOpened();
 
     if (mounted) {
-      setState(() {
-        // Notif aktif jika ada anomaly DAN belum dibuka
-        hasNotif = isAnomaly && !notifOpened;
-
-        kondisiKolam = isAnomaly ? "buruk" : "menunggu data...";
-      });
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const NotifPage()));
+      // Reload lagi setelah kembali untuk sinkronisasi
+      await NotifState.reload();
     }
   }
 
-  /// Auto-analisis dipanggil setiap kali buffer genap 20 data baru terkumpul
   Future<void> _autoAnalyze() async {
     if (isLoading) return;
     if (dataBuffer.length < windowSize) return;
@@ -77,7 +71,6 @@ class _HomePageState extends State<HomePage> {
         DateTime.now().toIso8601String(),
       );
 
-      // Simpan detail rekomendasi ke SharedPreferences agar bisa dibaca NotifPage
       if (isAnomaly) {
         final rekomendasi =
             responseData['rekomendasi'] as Map<String, dynamic>?;
@@ -87,27 +80,33 @@ class _HomePageState extends State<HomePage> {
         await prefs.setString('anomaly_head', rekomendasi?['head'] ?? '');
         await prefs.setString('anomaly_title', rekomendasi?['title'] ?? '');
 
-        // Simpan feature scores sebagai JSON string
         if (featureScores != null) {
-          final worstEntry = featureScores.entries
-              .reduce((a, b) => (a.value as double) > (b.value as double) ? a : b);
+          final worstEntry = featureScores.entries.reduce(
+            (a, b) => (a.value as double) > (b.value as double) ? a : b,
+          );
           await prefs.setString('anomaly_worst_feature', worstEntry.key);
           await prefs.setDouble(
-              'anomaly_worst_score', (worstEntry.value as double));
+            'anomaly_worst_score',
+            (worstEntry.value as double),
+          );
         }
+
+        // Anomali baru → reset opened agar icon menyala
+        await prefs.setBool('notif_opened', false);
       } else {
-        // Reset data anomali jika kondisi normal
         await prefs.remove('anomaly_head');
         await prefs.remove('anomaly_title');
         await prefs.remove('anomaly_worst_feature');
         await prefs.remove('anomaly_worst_score');
+        await prefs.setBool('notif_opened', true);
       }
+
+      // Update notifier global — HomePage & StatistikPage langsung sinkron
+      await NotifState.reload();
 
       if (mounted) {
         setState(() {
           kondisiKolam = isAnomaly ? "buruk" : "baik";
-          hasNotif = isAnomaly;
-          // Reset counter buffer — tunggu 20 data baru lagi untuk analisis berikutnya
           _analyzedBufferCount = dataBuffer.length;
         });
       }
@@ -175,8 +174,8 @@ class _HomePageState extends State<HomePage> {
               currentTurbidity = (latest['turbidity'] ?? 0).toDouble();
               currentPH = (latest['pH_air'] ?? 0).toDouble();
               currentTDS = (latest['tds'] ?? 0).toDouble();
-              currentTempLingkungan =
-                  (latest['suhu_lingkungan'] ?? 0).toDouble();
+              currentTempLingkungan = (latest['suhu_lingkungan'] ?? 0)
+                  .toDouble();
               stokPakan = (latest['pakan_percent'] ?? 0).toInt();
 
               final newBuffer = docs
@@ -193,19 +192,13 @@ class _HomePageState extends State<HomePage> {
                   .reversed
                   .toList();
 
-              // Update buffer
               dataBuffer = newBuffer;
 
-              // Hitung berapa data baru sejak analisis terakhir
               final newDataCount = dataBuffer.length - _analyzedBufferCount;
 
-              // Trigger analisis otomatis:
-              // - Pertama kali: saat buffer sudah penuh 20
-              // - Berikutnya: setiap ada 20 data baru masuk setelah analisis sebelumnya
               if (!isLoading &&
                   dataBuffer.length >= windowSize &&
                   (_analyzedBufferCount == 0 || newDataCount >= windowSize)) {
-                // Jalankan setelah frame selesai build agar tidak setState di dalam build
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _autoAnalyze();
                 });
@@ -222,7 +215,7 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   const SizedBox(height: 20),
 
-                  /// HEADER
+                  /// HEADER — pakai ValueListenableBuilder agar icon reaktif
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -246,18 +239,20 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ],
                       ),
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => const NotifPage()),
-                        ),
-                        child: Image.asset(
-                          hasNotif
-                              ? "assets/icons/Notif_On.png"
-                              : "assets/icons/Notif_Off.png",
-                          width: 24,
-                          height: 28,
-                        ),
+                      ValueListenableBuilder<bool>(
+                        valueListenable: NotifState.hasNotif,
+                        builder: (context, hasNotif, _) {
+                          return GestureDetector(
+                            onTap: _openNotifPage,
+                            child: Image.asset(
+                              hasNotif
+                                  ? "assets/icons/Notif_On.png"
+                                  : "assets/icons/Notif_Off.png",
+                              width: 24,
+                              height: 28,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -274,8 +269,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     child: Row(
                       children: [
-                        Image.asset("assets/LOGO4.png",
-                            width: 38, height: 40),
+                        Image.asset("assets/LOGO4.png", width: 38, height: 40),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
@@ -293,11 +287,13 @@ class _HomePageState extends State<HomePage> {
 
                   const SizedBox(height: 15),
 
-                  /// INDIKATOR STATUS ANALISIS (pengganti tombol)
+                  /// INDIKATOR STATUS ANALISIS
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                        vertical: 14, horizontal: 16),
+                      vertical: 14,
+                      horizontal: 16,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFEFF2F7),
                       borderRadius: BorderRadius.circular(10),
@@ -329,8 +325,8 @@ class _HomePageState extends State<HomePage> {
                             isLoading
                                 ? "Sedang menganalisis kondisi kolam..."
                                 : dataBuffer.length < windowSize
-                                    ? "Mengumpulkan data: ${dataBuffer.length}/$windowSize"
-                                    : "Analisis AI aktif — memantau otomatis setiap $windowSize data",
+                                ? "Mengumpulkan data: ${dataBuffer.length}/$windowSize"
+                                : "Analisis AI aktif — memantau otomatis setiap $windowSize data",
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               color: const Color(0xFF3558A8),
@@ -431,8 +427,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     child: Row(
                       children: [
-                        Image.asset("assets/LOGO4.png",
-                            width: 36, height: 36),
+                        Image.asset("assets/LOGO4.png", width: 36, height: 36),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
